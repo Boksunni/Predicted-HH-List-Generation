@@ -1,0 +1,761 @@
+```{r global_options, include=FALSE}
+#Download the packages via install.packages("") if not already present
+library(tidyverse)
+library(readxl)
+opts_chunk$set(fig.align="center", fig.height=5, message=FALSE, fig.width=8,tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+## Joseph Kim
+
+---
+
+The Datasets
+---
+```{R}
+#Datasets generated from UCSC Genome Browser Intersections. Must convert the text files to excel file format (xlsx)
+#To change directory location, change as necessary and use \\ and not //!
+#Make sure ALL datasets have same header (Ex: Location, TADID, Start, End, etc) otherwise the code will not work!
+GBR <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\HH Resp GBR +-500.xlsx")
+GBRH3k4me1 <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\HHRespGBR500 int H3k4me1.xlsx")
+GBRH3k4me2 <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\HHRespGBR500 int H3k4me2.xlsx")
+GBRH3k27me3 <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\HHRespGBR500 int H3k27me3.xlsx")
+GBRATAC <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\HHRespGBR500 int ATAC.xlsx")
+TAD <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\TAD.xlsx")
+GeneList <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\Master Mouse Gene List.xlsx")
+RNASeqNull <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\RNASeqNull.xlsx")
+```
+
+```{R}
+#Scoring and giving GBR's TADID
+#TAD dataset was modified in excel to give numeric ID number.
+GBR$TADID= 0
+GBR$PTADID= 0
+GBR$NTADID= 0
+GBR=GBR %>% arrange(Location,Start,End)
+TAD=TAD %>% arrange(Location,Start,End)
+i=1
+j=1
+flag=FALSE
+for (row in 1:nrow(TAD)){
+  ilast=i
+  flag=FALSE
+  TADID= TAD[row, "ID"]
+  TADLoc= TAD[row, "Location"]
+  TADStart= TAD[row, "Start"]
+  TADEnd= TAD[row, "End"]
+  if(row>=2){
+    PTADID= TAD[row-1, "ID"]
+    PTADLoc= TAD[row-1, "Location"]
+    PTADStart= TAD[row-1, "Start"]
+    PTADEnd= TAD[row-1, "End"]
+  }
+  else{
+    PTADID= 0
+    PTADLoc= "ch"
+    PTADStart= 999999999999999999
+    PTADEnd= 99999999999999999999
+  }
+  if(row<=nrow(TAD)-1){
+    NTADID= TAD[row+1, "ID"]
+    NTADLoc= TAD[row+1, "Location"]
+    NTADStart= TAD[row+1, "Start"]
+    NTADEnd= TAD[row+1, "End"]
+  }
+  else{
+    NTADID= 0
+    NTADLoc= "ch"
+    NTADStart= 0
+    NTADEnd= 0
+  }
+  while (TRUE){
+    GeneLoc= GBR[i, "Location"]
+    GeneStart= GBR[i, "Start"]
+    GeneEnd= GBR[i, "End"]
+    GeneTADID= GBR[i, "TADID"]
+    if (i>1){
+    PGeneEnd=GBR[i-1, "End"]  
+    }
+    else{
+    PGeneEnd=0  
+    }
+    #Case a is inbw current and next TAD
+    #Case b is start of chromosome
+    #Case c is end of chromosome
+    #Case d is overlap with both TADS
+    #Case e is inbw previous and current TAD
+    #Case 1 GBR is completely in tad
+    #case 2 GBR end is partially in tad but not in previous tad
+    #case 3 GBR start is partially in tad but not in next tad
+    casea= (TADLoc==GeneLoc)&&(GeneStart>=TADEnd)&&(GeneEnd<NTADStart)&&(NTADLoc==GeneLoc)
+    caseb= (TADLoc==GeneLoc)&&(GeneEnd<=TADStart)&&(PTADLoc<GeneLoc)
+    casec= (TADLoc==GeneLoc)&&(GeneStart>=TADEnd)&&(NTADLoc>GeneLoc)
+    cased= (TADLoc==GeneLoc)&&(GeneStart<=TADEnd)&&(NTADStart<=GeneEnd)&&(NTADLoc==GeneLoc)
+    casee= (TADLoc==GeneLoc)&&(GeneStart>=PTADEnd)&&(GeneEnd<=TADStart)&&(PTADLoc==GeneLoc)
+    case1=((GeneLoc==TADLoc)&&(TADStart<=GeneStart)&&(TADEnd>=GeneEnd))
+    if(PTADLoc!=TADLoc){
+      case2=((GeneLoc==TADLoc)&&(GeneEnd>=TADStart)&&(GeneStart<=TADStart)) 
+    }
+    else{
+     case2=((GeneLoc==TADLoc)&&(PTADEnd<=GeneStart)&&(GeneEnd>=TADStart)&&(GeneStart<=TADStart)) 
+    }
+    if(NTADLoc!=TADLoc){
+    case3=((GeneLoc==TADLoc)&&(GeneStart<=TADEnd)&&(GeneEnd>=TADEnd))  
+    }
+    else{
+     case3=((GeneLoc==TADLoc)&&(GeneStart<=TADEnd)&&(GeneEnd<=NTADStart)&&(GeneEnd>=TADEnd)) 
+    }
+    if (i==nrow(GBR)+1){
+      break
+    }
+    else if (case1 || case2 || case3){ 
+      GBR[i,]$TADID=TADID 
+      flag=TRUE
+    }
+    else if (caseb){
+      GBR[i,]$NTADID = TADID
+      GBR[i,]$PTADID = 0
+    }
+    else if (casea||cased){
+      GBR[i,]$NTADID = NTADID
+      GBR[i,]$PTADID = TADID
+    }
+    else if (casec){
+      GBR[i,]$NTADID = 0
+      GBR[i,]$PTADID = TADID
+    }
+    else if (casee){
+      GBR[i,]$NTADID = TADID
+      GBR[i,]$PTADID = PTADID
+    }
+    else if (PGeneEnd>GeneEnd&&flag){
+      flag=FALSE
+    }
+    else if (flag){
+      break
+    }
+    else if (i==nrow(GBR)||GeneLoc>TADLoc){
+      i=ilast
+      break
+    }
+    i=i+1
+  }
+  j=j+1
+}
+
+#Start of scoring GBRs
+#Change the dataset name (ex: GBRH3k4me1) to whatever dataset desired
+GBR$Points= 0
+for (row in 1:nrow(GBR)){
+  GBRPoint= GBR[row, "Points"]
+  GBRLoc= GBR[row, "Location"]
+  GBRStart= GBR[row, "Start"]
+  GBREnd= GBR[row, "End"]
+  for (row2 in 1:nrow(GBRH3k4me1)){
+    IntLoc= GBRH3k4me1[row2, "Location"]
+    IntStart= GBRH3k4me1[row2, "Start"]
+    IntEnd= GBRH3k4me1[row2, "End"]  
+    if ((GBRLoc==IntLoc)&&(GBRStart==IntStart)&&(GBREnd==IntEnd)) GBR[row,]$Points=GBR[row,]$Points+10  
+  }
+}
+
+for (row in 1:nrow(GBR)){
+  GBRPoint= GBR[row, "Points"]
+  GBRLoc= GBR[row, "Location"]
+  GBRStart= GBR[row, "Start"]
+  GBREnd= GBR[row, "End"]
+  for (row2 in 1:nrow(GBRH3k4me2)){
+    IntLoc= GBRH3k4me2[row2, "Location"]
+    IntStart= GBRH3k4me2[row2, "Start"]
+    IntEnd= GBRH3k4me2[row2, "End"]  
+    if ((GBRLoc==IntLoc)&&(GBRStart==IntStart)&&(GBREnd==IntEnd)) GBR[row,]$Points=GBR[row,]$Points+10  
+  }
+}
+
+for (row in 1:nrow(GBR)){
+  GBRPoint= GBR[row, "Points"]
+  GBRLoc= GBR[row, "Location"]
+  GBRStart= GBR[row, "Start"]
+  GBREnd= GBR[row, "End"]
+  for (row2 in 1:nrow(GBRH3k27me3)){
+    IntLoc= GBRH3k27me3[row2, "Location"]
+    IntStart= GBRH3k27me3[row2, "Start"]
+    IntEnd= GBRH3k27me3[row2, "End"]  
+    if ((GBRLoc==IntLoc)&&(GBRStart==IntStart)&&(GBREnd==IntEnd)) GBR[row,]$Points=GBR[row,]$Points+10  
+  }
+}
+
+for (row in 1:nrow(GBR)){
+  GBRPoint= GBR[row, "Points"]
+  GBRLoc= GBR[row, "Location"]
+  GBRStart= GBR[row, "Start"]
+  GBREnd= GBR[row, "End"]
+  for (row2 in 1:nrow(GBRATAC)){
+    IntLoc= GBRATAC[row2, "Location"]
+    IntStart= GBRATAC[row2, "Start"]
+    IntEnd= GBRATAC[row2, "End"]  
+    if ((GBRLoc==IntLoc)&&(GBRStart==IntStart)&&(GBREnd==IntEnd)) GBR[row,]$Points=GBR[row,]$Points+10  
+  }
+}
+
+glimpse(GBR)
+GBR$TADID=as.numeric(GBR$TADID)
+GBR$NTADID=as.numeric(GBR$NTADID)
+GBR$PTADID=as.numeric(GBR$PTADID)
+#The output is in csv format so make sure to change back to excel if using again for future code.
+write.csv(GBR,"C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\FinalGBRData.csv", row.names = FALSE)
+```
+
+```{R}
+#Assigning Genes TADID, PTADID, NTADID
+GeneList$TADID= 0
+GeneList$PTADID= 0
+GeneList$NTADID= 0
+GeneList=GeneList %>% arrange(Location,Start,End)
+TAD=TAD %>% arrange(Location,Start,End)
+i=1
+j=1
+flag=FALSE
+for (row in 1:nrow(TAD)){
+  ilast=i
+  flag=FALSE
+  TADID= TAD[row, "ID"]
+  TADLoc= TAD[row, "Location"]
+  TADStart= TAD[row, "Start"]
+  TADEnd= TAD[row, "End"]
+  if(row>=2){
+    PTADID= TAD[row-1, "ID"]
+    PTADLoc= TAD[row-1, "Location"]
+    PTADStart= TAD[row-1, "Start"]
+    PTADEnd= TAD[row-1, "End"]
+  }
+  else{
+    PTADID= 0
+    PTADLoc= "ch"
+    PTADStart= 999999999999999999
+    PTADEnd= 99999999999999999999
+  }
+  if(row<=nrow(TAD)-1){
+    NTADID= TAD[row+1, "ID"]
+    NTADLoc= TAD[row+1, "Location"]
+    NTADStart= TAD[row+1, "Start"]
+    NTADEnd= TAD[row+1, "End"]
+  }
+  else{
+    NTADID= 0
+    NTADLoc= "ch"
+    NTADStart= 0
+    NTADEnd= 0
+  }
+  while (TRUE){
+    GeneLoc= GeneList[i, "Location"]
+    GeneStart= GeneList[i, "Start"]
+    GeneEnd= GeneList[i, "End"]
+    GeneTADID= GeneList[i, "TADID"]
+    if (i>1){
+    PGeneEnd=GeneList[i-1, "End"]  
+    }
+    else{
+    PGeneEnd=0    
+    }
+    #Case a is inbw current and next TAD
+    #Case b is start of chromosome
+    #Case c is end of chromosome
+    #Case d is overlap with both TADS
+    #Case e is inbw previous and current TAD
+    #Case 1 GBR is completely in tad
+    #case 2 GBR end is partially in tad but not in previous tad
+    #case 3 GBR start is partially in tad but not in next tad
+    casea= (TADLoc==GeneLoc)&&(GeneStart>=TADEnd)&&(GeneEnd<NTADStart)&&(NTADLoc==GeneLoc)
+    caseb= (TADLoc==GeneLoc)&&(GeneEnd<=TADStart)&&(PTADLoc<GeneLoc)
+    casec= (TADLoc==GeneLoc)&&(GeneStart>=TADEnd)&&(NTADLoc>GeneLoc)
+    cased= (TADLoc==GeneLoc)&&(GeneStart<=TADEnd)&&(NTADStart<=GeneEnd)&&(NTADLoc==GeneLoc)
+    casee= (TADLoc==GeneLoc)&&(GeneStart>=PTADEnd)&&(GeneEnd<=TADStart)&&(PTADLoc==GeneLoc)
+    case1=((GeneLoc==TADLoc)&&(TADStart<=GeneStart)&&(TADEnd>=GeneEnd))
+    if(PTADLoc!=TADLoc){
+      case2=((GeneLoc==TADLoc)&&(GeneEnd>=TADStart)&&(GeneStart<=TADStart)) 
+    }
+    else{
+     case2=((GeneLoc==TADLoc)&&(PTADEnd<=GeneStart)&&(GeneEnd>=TADStart)&&(GeneStart<=TADStart)) 
+    }
+    if(NTADLoc!=TADLoc){
+    case3=((GeneLoc==TADLoc)&&(GeneStart<=TADEnd)&&(GeneEnd>=TADEnd))  
+    }
+    else{
+     case3=((GeneLoc==TADLoc)&&(GeneStart<=TADEnd)&&(GeneEnd<=NTADStart)&&(GeneEnd>=TADEnd)) 
+    }
+    if (i==nrow(GeneList)+1){
+      break
+    }
+    else if (case1 || case2 || case3){ 
+      GeneList[i,]$TADID=TADID 
+      flag=TRUE
+    }
+    else if (caseb){
+      GeneList[i,]$NTADID = TADID
+      GeneList[i,]$PTADID = 0
+    }
+    else if (casea||cased){
+      GeneList[i,]$NTADID = NTADID
+      GeneList[i,]$PTADID = TADID
+    }
+    else if (casec){
+      GeneList[i,]$NTADID = 0
+      GeneList[i,]$PTADID = TADID
+    }
+    else if (casee){
+      GeneList[i,]$NTADID = TADID
+      GeneList[i,]$PTADID = PTADID
+    }
+    else if (PGeneEnd>GeneEnd&&flag){
+      flag=FALSE
+    }
+    else if (flag){
+      break
+    }
+    else if (i==nrow(GeneList)||GeneLoc>TADLoc){
+      i=ilast
+      break
+    }
+    i=i+1
+  }
+  j=j+1
+}
+
+glimpse(GeneList)
+GeneList$TADID=as.numeric(GeneList$TADID)
+GeneList$PTADID=as.numeric(GeneList$PTADID)
+GeneList$NTADID=as.numeric(GeneList$NTADID)
+write.csv(GeneList,"C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\GeneList.csv", row.names = FALSE)
+```
+
+```{R}
+#Distance based calculation on IDed Genes
+#IDGenes was generated from GeneList and pulled only genes with TADIDs on excel
+#Also converted back to excel format
+IDGenes <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\IDGenes.xlsx")
+IDGenes$TADID=as.numeric(IDGenes$TADID)
+GBR$TADID=as.numeric(GBR$TADID)
+IDGenes=IDGenes %>% arrange(TADID)
+GBR=GBR %>% arrange(TADID)
+
+IDGenes$TotPoints= 0
+i=1
+j=1
+k=1
+jlast=1
+test=1
+firstcase=TRUE
+while (TRUE){
+  test=test+1
+  GeneTADID= IDGenes[i, "TADID"] 
+  GeneLoc= IDGenes[i, "Location"]
+  GeneStart= IDGenes[i, "Start"]
+  GeneEnd= IDGenes[i, "End"]
+  GeneMid= (GeneEnd+GeneStart)/2
+  GBRTADID= GBR[j, "TADID"] 
+  GBRLoc= GBR[j, "Location"]
+  GBRStart= GBR[j, "Start"]
+  GBREnd= GBR[j, "End"]
+  GBRMid= (GBREnd+GBRStart)/2
+  GBRPoints= GBR[j, "Points"]
+  Dist=abs(GeneMid-GBRMid)
+  case0A=as.numeric(GeneTADID)==0
+  case0B=as.numeric(GBRTADID)==0
+  case1=as.numeric(GeneTADID)==as.numeric(GBRTADID)
+  case2=as.numeric(GeneTADID)>as.numeric(GBRTADID)
+  case3=as.numeric(GeneTADID)<as.numeric(GBRTADID)
+  case4=Dist>0&&Dist<500000
+  if (i==nrow(IDGenes)+1){
+    break
+  }
+  else if (j==nrow(GBR)+1&&i<=nrow(IDGenes)){
+    i=i+1
+    j=jlast
+    next
+  }
+  else if (case0A){
+    i=i+1
+    next
+  }
+  else if (case0B){
+    j=j+1
+    next
+  }  
+  else if (case1&&case4&&firstcase){
+    percentile=1-(Dist/500000)
+    score=GBRPoints*percentile
+    IDGenes[i,]$TotPoints=IDGenes[i,]$TotPoints+score
+    jlast=j
+    j=j+1
+    firstcase=FALSE
+    next
+  }
+  else if (case1&&case4){
+    percentile=1-(Dist/500000)
+    score=GBRPoints*percentile
+    IDGenes[i,]$TotPoints=IDGenes[i,]$TotPoints+score
+    j=j+1
+    next
+  }
+  else if (case1&&!case4){
+    j=j+1
+    next
+  }
+  else if (case3){
+    i=i+1
+    j=jlast
+    firstcase=TRUE
+    next
+  }
+  else if (case2){
+    j=j+1
+    next
+  }
+}
+
+glimpse(IDGenes)
+glimpse(GBR)
+IDGenes$TotPoints=as.numeric(IDGenes$TotPoints)
+write.csv(IDGenes,"C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\TestingDist.csv", row.names = FALSE)
+```
+
+```{R}
+#Distance based scoring for the second list of genes with no TADID
+#Generated NoID from GeneList with all genes that have a PTADID/NTADID aka no TADID on excel
+NoID <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\NoIDGenes.xlsx")
+
+GBR=GBR %>% arrange(TADID)
+NoID$PTotPoints= 0
+NoID$NTotPoints= 0
+#First Scoring PTADIDs
+NoID=NoID %>% arrange(PTADID)
+i=1
+j=1
+k=1
+jlast=1
+test=1
+firstcase=TRUE
+while (TRUE){
+  test=test+1
+  GeneTADID= NoID[i, "PTADID"] 
+  GeneLoc= NoID[i, "Location"]
+  GeneStart= NoID[i, "Start"]
+  GeneEnd= NoID[i, "End"]
+  GeneMid= (GeneEnd+GeneStart)/2
+  GBRTADID= GBR[j, "TADID"] 
+  GBRLoc= GBR[j, "Location"]
+  GBRStart= GBR[j, "Start"]
+  GBREnd= GBR[j, "End"]
+  GBRMid= (GBREnd+GBRStart)/2
+  GBRPoints= GBR[j, "Points"]
+  Dist=abs(GeneMid-GBRMid)
+  case0A=as.numeric(GeneTADID)==0
+  case0B=as.numeric(GBRTADID)==0
+  case1=as.numeric(GeneTADID)==as.numeric(GBRTADID)
+  case2=as.numeric(GeneTADID)>as.numeric(GBRTADID)
+  case3=as.numeric(GeneTADID)<as.numeric(GBRTADID)
+  case4=Dist>0&&Dist<500000
+  if (i==nrow(NoID)+1){
+    break
+  }
+  else if (j==nrow(GBR)+1&&i<=nrow(NoID)){
+    i=i+1
+    j=jlast
+    next
+  }
+  else if (case0A){
+    i=i+1
+    next
+  }
+  else if (case0B){
+    j=j+1
+    next
+  }  
+  else if (case1&&case4&&firstcase){
+    percentile=1-(Dist/500000)
+    score=GBRPoints*percentile
+    NoID[i,]$PTotPoints=NoID[i,]$PTotPoints+score
+    jlast=j
+    j=j+1
+    firstcase=FALSE
+    next
+  }
+  else if (case1&&case4){
+    percentile=1-(Dist/500000)
+    score=GBRPoints*percentile
+    NoID[i,]$PTotPoints=NoID[i,]$PTotPoints+score
+    j=j+1
+    next
+  }
+  else if (case1&&!case4){
+    j=j+1
+    next
+  }
+  else if (case3){
+    i=i+1
+    j=jlast
+    firstcase=TRUE
+    next
+  }
+  else if (case2){
+    j=j+1
+    next
+  }
+}
+
+#Next scoring based off NTADID
+NoID=NoID %>% arrange(NTADID)
+i=1
+j=1
+k=1
+jlast=1
+test=1
+firstcase=TRUE
+while (TRUE){
+  test=test+1
+  GeneTADID= NoID[i, "NTADID"] 
+  GeneLoc= NoID[i, "Location"]
+  GeneStart= NoID[i, "Start"]
+  GeneEnd= NoID[i, "End"]
+  GeneMid= (GeneEnd+GeneStart)/2
+  GBRTADID= GBR[j, "TADID"] 
+  GBRLoc= GBR[j, "Location"]
+  GBRStart= GBR[j, "Start"]
+  GBREnd= GBR[j, "End"]
+  GBRMid= (GBREnd+GBRStart)/2
+  GBRPoints= GBR[j, "Points"]
+  Dist=abs(GeneMid-GBRMid)
+  case0A=as.numeric(GeneTADID)==0
+  case0B=as.numeric(GBRTADID)==0
+  case1=as.numeric(GeneTADID)==as.numeric(GBRTADID)
+  case2=as.numeric(GeneTADID)>as.numeric(GBRTADID)
+  case3=as.numeric(GeneTADID)<as.numeric(GBRTADID)
+  case4=Dist>0&&Dist<500000
+  if (i==nrow(NoID)+1){
+    break
+  }
+  else if (j==nrow(GBR)+1&&i<=nrow(NoID)){
+    i=i+1
+    j=jlast
+    next
+  }
+  else if (case0A){
+    i=i+1
+    next
+  }
+  else if (case0B){
+    j=j+1
+    next
+  }  
+  else if (case1&&case4&&firstcase){
+    percentile=1-(Dist/500000)
+    score=GBRPoints*percentile
+    NoID[i,]$NTotPoints=NoID[i,]$NTotPoints+score
+    jlast=j
+    j=j+1
+    firstcase=FALSE
+    next
+  }
+  else if (case1&&case4){
+    percentile=1-(Dist/500000)
+    score=GBRPoints*percentile
+    NoID[i,]$NTotPoints=NoID[i,]$NTotPoints+score
+    j=j+1
+    next
+  }
+  else if (case1&&!case4){
+    j=j+1
+    next
+  }
+  else if (case3){
+    i=i+1
+    j=jlast
+    firstcase=TRUE
+    next
+  }
+  else if (case2){
+    j=j+1
+    next
+  }
+}
+
+glimpse(NoID)
+glimpse(GBR)
+NoID$PTotPoints=as.numeric(NoID$PTotPoints)
+NoID$NTotPoints=as.numeric(NoID$NTotPoints)
+write.csv(NoID,"C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\NoIDTestingDist.csv", row.names = FALSE)
+```
+
+```{R}
+#RNAseq data merge (Adds RNAseq information to the gene list)
+#ID+NoID is a merged gene list of the respective cateogries. Converted file to excel. NoID genes had their total points called from the higher of the two categories (PTotpoints and NTotPoints) done manually on excel. 
+AllGenes <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\ID+NoID.xlsx")
+RNASeqNull=RNASeqNull %>% arrange(Gene)
+RNAGeneList=AllGenes %>% full_join(RNASeqNull, by=c("Gene"="Gene"))
+
+RNAGeneList$OnRNAList=FALSE
+i=1
+while (TRUE){
+  isNA=is.na(RNAGeneList[i, "logFC"])
+  if (i==nrow(RNAGeneList)+1){
+    break
+  }
+  else if (isNA){
+    RNAGeneList[i,]$OnRNAList=FALSE
+    i=i+1
+    next
+  }
+  else{
+    RNAGeneList[i,]$OnRNAList=TRUE
+    i=i+1
+    next
+  }
+}
+
+
+glimpse(RNAGeneList)
+RNAGeneList$OnRNAList=as.character(RNAGeneList$OnRNAList)
+write.csv(RNAGeneList,"C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\RNASeqGeneListTest.csv", row.names = FALSE)
+```
+
+```{R}
+#Comparing RNA seq Data
+#Modified data removed genes with TADID=0 and RNAseq genes not originally in the GeneList. Also converted to excel file format
+#This removes RNA seq false genes that share TADIDs with RNA seq true genes
+#Aka generates List 2 (partially filtered)
+#List 3 aka fully filtered was generated on excel
+RNASeqMod <- read_excel("C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\RNASeqGeneListTest NA removed.xlsx")
+
+RNASeqMod=RNASeqMod %>% arrange(TADID)
+hasTRUE=FALSE
+hasFALSE=FALSE
+isSolo=TRUE
+i=1
+j=2
+tempList= data.frame(NULL)
+finalList=data.frame(NULL)
+while (TRUE){
+  GeneTADID= RNASeqMod[i, "TADID"] 
+  GeneRNA= RNASeqMod[i, "OnRNAList"]
+  NextGeneTADID= RNASeqMod[j, "TADID"]
+  NextGeneRNA= RNASeqMod[j, "OnRNAList"] 
+  case1=as.numeric(GeneTADID)==as.numeric(NextGeneTADID)
+  case2=as.numeric(GeneTADID)<as.numeric(NextGeneTADID)
+  if (j==nrow(RNASeqMod)+1){
+    for (row in 1:nrow(tempList)){
+      tempGeneRNA= tempList[row, "OnRNAList"]
+      if (as.logical(tempGeneRNA)&&!hasTRUE){
+        hasTRUE=TRUE
+        next
+      }
+      else if (as.logical(tempGeneRNA)){
+        next
+      }
+      else{
+        hasFALSE=TRUE
+        next
+      }
+    }
+    if (hasTRUE&&hasFALSE){
+      for (row in 1:nrow(tempList)){
+        tempGeneRNA= tempList[row, "OnRNAList"]
+        if (as.logical(tempGeneRNA)){
+          finalList=rbind(finalList,tempList[row,])
+        }
+      }
+    }
+    else if (hasTRUE){
+      for (row in 1:nrow(tempList)){
+        tempGeneRNA= tempList[row, "OnRNAList"]
+        if (as.logical(tempGeneRNA)){
+          finalList=rbind(finalList,tempList[row,])
+        }
+      }
+    }
+    else if (hasFALSE){
+      for (row in 1:nrow(tempList)){
+        tempGeneRNA= tempList[row, "OnRNAList"]
+        if (!as.logical(tempGeneRNA)){
+          finalList=rbind(finalList,tempList[row,])
+        }
+      }
+    }
+    break
+  }
+  else if (case1&&nrow(tempList)==0){
+    tempList=rbind(tempList,RNASeqMod[i,])
+    tempList=rbind(tempList,RNASeqMod[j,])
+    j=j+1
+    isSolo=FALSE
+    next
+  }
+  else if (case1){
+    tempList=rbind(tempList,RNASeqMod[j,])
+    j=j+1
+    next
+  }
+  else if (case2&&isSolo){
+    finalList=rbind(finalList,RNASeqMod[i,])
+    i=i+1
+    j=j+1
+    next
+  }
+  else if (case2){
+    for (row in 1:nrow(tempList)){
+      tempGeneRNA= tempList[row, "OnRNAList"]
+      if (as.logical(tempGeneRNA)&&!hasTRUE){
+        hasTRUE=TRUE
+        next
+      }
+      else if (as.logical(tempGeneRNA)){
+        next
+      }
+      else{
+        hasFALSE=TRUE
+        next
+      }
+    }
+    if (hasTRUE&&hasFALSE){
+      for (row in 1:nrow(tempList)){
+        tempGeneRNA= tempList[row, "OnRNAList"]
+        if (as.logical(tempGeneRNA)){
+          finalList=rbind(finalList,tempList[row,])
+        }
+      }
+    }
+    else if (hasTRUE){
+      for (row in 1:nrow(tempList)){
+        tempGeneRNA= tempList[row, "OnRNAList"]
+        if (as.logical(tempGeneRNA)){
+          finalList=rbind(finalList,tempList[row,])
+        }
+      }
+    }
+    else if (hasFALSE){
+      for (row in 1:nrow(tempList)){
+        tempGeneRNA= tempList[row, "OnRNAList"]
+        if (!as.logical(tempGeneRNA)){
+          finalList=rbind(finalList,tempList[row,])
+        }
+      }
+    }
+  }
+  hasTRUE=FALSE
+  hasFALSE=FALSE
+  isSolo=TRUE
+  tempList= data.frame(NULL)
+  i=j
+  j=j+1
+  next
+}
+
+write.csv(finalList,"C:\\Users\\Boksu\\Documents\\College\\Lab\\S20\\GBR Analysis Project\\R Studio Files\\RNAScreenTest.csv", row.names = FALSE)
+
+```
+
+```{R, echo=F}
+## DO NOT DELETE THIS BLOCK!
+sessionInfo()
+Sys.time()
+Sys.info()
+```
